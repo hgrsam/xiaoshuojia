@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <meta name="theme-color" content="#1a1a2e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>小说家 · Novelist</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <!-- 侧边栏 -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <div class="logo">
+          <span class="logo-icon">📖</span>
+          <span class="logo-text">小说家</span>
+        </div>
+        <button class="sidebar-close" id="sidebarClose">✕</button>
+      </div>
+      <nav class="sidebar-nav">
+        <a class="nav-item active" data-page="dashboard" onclick="navigate('dashboard')">
+          <span class="nav-icon">🏠</span>
+          <span>我的书房</span>
+        </a>
+        <a class="nav-item" data-page="write" onclick="navigate('write')">
+          <span class="nav-icon">✍️</span>
+          <span>开始创作</span>
+        </a>
+        <a class="nav-item" data-page="script" onclick="navigate('script')">
+          <span class="nav-icon">🎬</span>
+          <span>转换剧本</span>
+        </a>
+        <a class="nav-item" data-page="comic" onclick="navigate('comic')">
+          <span class="nav-icon">🎨</span>
+          <span>转换漫剧</span>
+        </a>
+        <a class="nav-item" data-page="library" onclick="navigate('library')">
+          <span class="nav-icon">📚</span>
+          <span>我的书库</span>
+        </a>
+        <a class="nav-item" data-page="outline" onclick="navigate('outline')">
+          <span class="nav-icon">🗺️</span>
+          <span>大纲工具</span>
+        </a>
+        <a class="nav-item" data-page="characters" onclick="navigate('characters')">
+          <span class="nav-icon">👤</span>
+          <span>人物管理</span>
+        </a>
+        <a class="nav-item" data-page="stats" onclick="navigate('stats')">
+          <span class="nav-icon">📊</span>
+          <span>写作统计</span>
+        </a>
+        <a class="nav-item" onclick="openWritingMentor()">
+          <span class="nav-icon">🎓</span>
+          <span>写作导师</span>
+        </a>
+        <a class="nav-item" data-page="settings" onclick="navigate('settings')">
+          <span class="nav-icon">⚙️</span>
+          <span>设置</span>
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="writing-stats">
+          <div class="stat-item">
+            <span class="stat-num" id="totalWords">0</span>
+            <span class="stat-label">总字数</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-num" id="totalNovels">0</span>
+            <span class="stat-label">作品数</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- 主内容区 -->
+    <div class="main-wrapper">
+      <!-- 顶部导航 -->
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="menu-btn" id="menuBtn" onclick="toggleSidebar()">☰</button>
+          <span class="page-title" id="pageTitle">我的书房</span>
+        </div>
+        <div class="topbar-right">
+          <button class="btn-icon" id="eyeCareBtn" onclick="toggleEyeCareMode()" title="护眼模式">🔆</button>
+          <button class="btn-icon" onclick="navigate('stats')" title="写作统计">📊</button>
+          <button class="btn-icon" onclick="showQuickWrite()" title="快速创作">✍️</button>
+          <div class="avatar" onclick="navigate('settings')">作</div>
+        </div>
+      </header>
+
+      <!-- 页面内容 -->
+      <main class="content" id="content">
+        <!-- 内容由JS动态渲染 -->
+      </main>
+    </div>
+  </div>
+
+  <!-- 模态框 -->
+  <div class="modal-overlay" id="modalOverlay" onclick="closeModal()"></div>
+  <div class="modal" id="modal">
+    <div class="modal-header">
+      <h3 id="modalTitle">标题</h3>
+      <button onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="modal-footer" id="modalFooter"></div>
+  </div>
+
+  <!-- 提示弹窗 -->
+  <div class="toast" id="toast"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
