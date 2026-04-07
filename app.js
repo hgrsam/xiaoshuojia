@@ -117,7 +117,8 @@ function initDemoData() {
 const pageTitles = {
   dashboard: '我的书房', write: '写作中心', library: '我的书库',
   script: '小说转剧本', comic: '小说转漫剧', outline: '大纲工具',
-  characters: '人物管理', settings: '设置', stats: '写作统计'
+  characters: '人物管理', settings: '设置', stats: '写作统计',
+  aicreate: 'AI一键创作'
 };
 
 function navigate(page, params = {}) {
@@ -148,6 +149,7 @@ function navigate(page, params = {}) {
     case 'characters': renderCharacters(content, params); break;
     case 'settings':   renderSettings(content); break;
     case 'stats':     renderStatsReport(content); break;
+    case 'aicreate':  renderAICreate(content); break;
     default:           renderDashboard(content);
   }
 
@@ -3008,4 +3010,485 @@ async function aiChat(message) {
   }
   
   chatContainer.scrollTop = chatContainer.scrollHeight;
+}
+
+// ============================================================
+// AI 一键创作向导
+// 流程：输入灵感 → 生成大纲 → 生成细纲 → 逐章生成内容
+// ============================================================
+
+// 全局状态
+const AICreate = {
+  step: 1,          // 1=灵感 2=大纲 3=细纲 4=生成内容
+  idea: '',
+  volCount: 1,
+  chapterPerVol: 10,
+  outline: null,    // { title, genre, desc, volumes:[{title,chapters:[{title,summary}]}] }
+  detailOutline: null, // 细纲，同结构但chapters含detail字段
+  novelId: null,
+};
+
+function renderAICreate(el) {
+  const s = DB.getSettings();
+  const hasKey = !!s.aiApiKey;
+  el.innerHTML = `
+<div style="max-width:780px;margin:0 auto;padding:16px">
+  ${!hasKey ? `<div style="background:var(--warning);color:#000;border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:14px">
+    ⚠️ 请先 <span style="cursor:pointer;text-decoration:underline" onclick="navigate('settings');setTimeout(()=>showSettingsSection('ai'),100)">配置 API Key</span>，才能使用 AI 功能
+  </div>` : ''}
+  <!-- 步骤进度条 -->
+  <div id="aiCreateSteps" style="display:flex;gap:0;margin-bottom:24px;border-radius:10px;overflow:hidden;border:1px solid var(--border)">
+    ${[['1','💡','输入灵感'],['2','📋','生成大纲'],['3','📝','生成细纲'],['4','✍️','生成内容']].map(([n,icon,label])=>`
+    <div id="aiStep${n}" style="flex:1;padding:10px 4px;text-align:center;font-size:12px;background:${n==='1'?'var(--primary)':'var(--bg2)'};color:${n==='1'?'#fff':'var(--text2)'};transition:all .3s;cursor:default">
+      <div style="font-size:18px">${icon}</div>
+      <div style="margin-top:2px">第${n}步</div>
+      <div style="font-weight:600">${label}</div>
+    </div>`).join('')}
+  </div>
+  <!-- 内容区 -->
+  <div id="aiCreateBody"></div>
+</div>`;
+  AICreate.step = 1;
+  renderAICreateStep();
+}
+
+function renderAICreateStep() {
+  // 更新步骤高亮
+  for(let i=1;i<=4;i++){
+    const el=document.getElementById('aiStep'+i);
+    if(!el) continue;
+    if(i===AICreate.step){
+      el.style.background='var(--primary)'; el.style.color='#fff';
+    } else if(i<AICreate.step){
+      el.style.background='var(--success)'; el.style.color='#fff';
+    } else {
+      el.style.background='var(--bg2)'; el.style.color='var(--text2)';
+    }
+  }
+  const body = document.getElementById('aiCreateBody');
+  if(!body) return;
+  switch(AICreate.step){
+    case 1: renderStep1(body); break;
+    case 2: renderStep2(body); break;
+    case 3: renderStep3(body); break;
+    case 4: renderStep4(body); break;
+  }
+}
+
+// 第1步：输入灵感
+function renderStep1(el) {
+  el.innerHTML = `
+<div class="card" style="padding:20px">
+  <h3 style="margin:0 0 16px;font-size:16px">💡 输入你的小说灵感</h3>
+  <textarea id="aiIdeaInput" style="width:100%;height:120px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px;color:var(--text1);font-size:14px;resize:vertical;box-sizing:border-box;font-family:inherit;line-height:1.7" placeholder="例如：一个普通外卖小哥意外获得了时间暂停的能力，从此走上了一条不凡的道路。故事发生在近未来都市，主角性格乐观幽默，会遇到各种奇特任务...">${AICreate.idea}</textarea>
+  
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px">
+    <div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:6px">卷数（篇）</div>
+      <select id="aiVolCount" style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:var(--text1);font-size:14px">
+        <option value="1" ${AICreate.volCount===1?'selected':''}>1卷（适合短篇）</option>
+        <option value="2" ${AICreate.volCount===2?'selected':''}>2卷</option>
+        <option value="3" ${AICreate.volCount===3?'selected':''}>3卷（适合中篇）</option>
+        <option value="5" ${AICreate.volCount===5?'selected':''}>5卷（适合长篇）</option>
+        <option value="10" ${AICreate.volCount===10?'selected':''}>10卷（超长篇）</option>
+      </select>
+    </div>
+    <div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:6px">每卷章节数</div>
+      <select id="aiChapterPerVol" style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:var(--text1);font-size:14px">
+        <option value="5" ${AICreate.chapterPerVol===5?'selected':''}>5章</option>
+        <option value="10" ${AICreate.chapterPerVol===10?'selected':''}>10章</option>
+        <option value="15" ${AICreate.chapterPerVol===15?'selected':''}>15章</option>
+        <option value="20" ${AICreate.chapterPerVol===20?'selected':''}>20章</option>
+      </select>
+    </div>
+  </div>
+  
+  <div style="margin-top:6px;font-size:12px;color:var(--text3)" id="aiTotalChaptersHint">
+    共 <b id="aiTotalNum">${AICreate.volCount * AICreate.chapterPerVol}</b> 章
+  </div>
+
+  <button class="btn btn-primary btn-block" style="margin-top:20px;height:44px;font-size:15px" onclick="goStep2()">
+    下一步：AI 生成大纲 →
+  </button>
+</div>`;
+
+  // 动态更新总章节数
+  ['aiVolCount','aiChapterPerVol'].forEach(id=>{
+    document.getElementById(id)?.addEventListener('change', ()=>{
+      const v = parseInt(document.getElementById('aiVolCount').value)||1;
+      const c = parseInt(document.getElementById('aiChapterPerVol').value)||10;
+      const el = document.getElementById('aiTotalNum');
+      if(el) el.textContent = v*c;
+    });
+  });
+}
+
+async function goStep2() {
+  const idea = document.getElementById('aiIdeaInput')?.value?.trim();
+  if(!idea){ toast('请输入小说灵感', 'warning'); return; }
+  AICreate.idea = idea;
+  AICreate.volCount = parseInt(document.getElementById('aiVolCount')?.value)||1;
+  AICreate.chapterPerVol = parseInt(document.getElementById('aiChapterPerVol')?.value)||10;
+  AICreate.step = 2;
+  renderAICreateStep();
+  await generateOutline();
+}
+
+// 第2步：大纲生成
+function renderStep2(el) {
+  el.innerHTML = `
+<div class="card" style="padding:20px">
+  <h3 style="margin:0 0 4px;font-size:16px">📋 AI 正在生成大纲...</h3>
+  <p style="color:var(--text3);font-size:13px;margin:0 0 16px">共 ${AICreate.volCount} 卷，每卷 ${AICreate.chapterPerVol} 章</p>
+  <div id="outlineResult" style="min-height:200px">
+    <div style="text-align:center;padding:60px 0;color:var(--text3)">
+      <div style="font-size:32px;margin-bottom:12px">⚙️</div>
+      <div>AI 思考中，请稍候...</div>
+    </div>
+  </div>
+  <div id="outlineActions" style="display:none;margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">
+    <button class="btn btn-secondary" onclick="generateOutline()">🔄 重新生成</button>
+    <button class="btn btn-primary" onclick="goStep3()">下一步：生成细纲 →</button>
+  </div>
+</div>`;
+}
+
+async function generateOutline() {
+  const body = document.getElementById('aiCreateBody');
+  if(!body) return;
+  renderStep2(body);
+
+  const prompt = `请根据以下灵感，为小说创作一个完整大纲。
+
+灵感：${AICreate.idea}
+
+要求：
+- 共 ${AICreate.volCount} 卷，每卷 ${AICreate.chapterPerVol} 章
+- 输出严格的 JSON 格式，不要有多余文字
+
+JSON格式如下：
+{
+  "title": "小说名称",
+  "genre": "类型（如：都市、玄幻、言情等）",
+  "desc": "一句话简介（30字内）",
+  "volumes": [
+    {
+      "title": "卷名",
+      "summary": "本卷剧情简介（50字内）",
+      "chapters": [
+        { "title": "章节名", "summary": "本章剧情概要（30字内）" }
+      ]
+    }
+  ]
+}`;
+
+  try {
+    const result = await callAI([{role:'user',content:prompt}], 3000, 0.8);
+    // 提取JSON
+    const jsonMatch = result.match(/\{[\s\S]*\}/);
+    if(!jsonMatch) throw new Error('返回格式错误，请重试');
+    const outline = JSON.parse(jsonMatch[0]);
+    AICreate.outline = outline;
+    
+    // 显示大纲
+    const resultEl = document.getElementById('outlineResult');
+    if(resultEl) {
+      resultEl.innerHTML = renderOutlinePreview(outline);
+    }
+    const actionsEl = document.getElementById('outlineActions');
+    if(actionsEl) actionsEl.style.display='flex';
+  } catch(e) {
+    const resultEl = document.getElementById('outlineResult');
+    if(resultEl) resultEl.innerHTML = `
+      <div style="text-align:center;padding:40px 0;color:var(--danger)">
+        <div style="font-size:32px;margin-bottom:12px">❌</div>
+        <div>${e.message}</div>
+        <button class="btn btn-secondary" style="margin-top:12px" onclick="generateOutline()">重试</button>
+      </div>`;
+  }
+}
+
+function renderOutlinePreview(outline) {
+  return `
+<div style="background:var(--bg3);border-radius:8px;padding:16px">
+  <div style="font-size:18px;font-weight:700;margin-bottom:4px">${outline.title||'未命名'}</div>
+  <div style="font-size:12px;color:var(--primary);margin-bottom:6px">${outline.genre||''}</div>
+  <div style="font-size:13px;color:var(--text2);margin-bottom:16px">${outline.desc||''}</div>
+  ${(outline.volumes||[]).map((vol,vi)=>`
+    <div style="margin-bottom:12px">
+      <div style="font-weight:600;font-size:14px;color:var(--text1);margin-bottom:6px">📚 ${vol.title}</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:8px">${vol.summary||''}</div>
+      <div style="display:grid;gap:4px">
+        ${(vol.chapters||[]).map((ch,ci)=>`
+          <div style="display:flex;gap:8px;font-size:13px;padding:6px 10px;background:var(--bg2);border-radius:6px">
+            <span style="color:var(--text3);min-width:32px">第${ci+1}章</span>
+            <span style="color:var(--text1);font-weight:500">${ch.title}</span>
+            <span style="color:var(--text3);flex:1;text-align:right">${ch.summary||''}</span>
+          </div>`).join('')}
+      </div>
+    </div>`).join('')}
+</div>`;
+}
+
+async function goStep3() {
+  if(!AICreate.outline){ toast('请先生成大纲', 'warning'); return; }
+  AICreate.step = 3;
+  renderAICreateStep();
+  await generateDetailOutline();
+}
+
+// 第3步：细纲生成
+function renderStep3(el) {
+  const total = (AICreate.outline?.volumes||[]).reduce((s,v)=>s+(v.chapters?.length||0), 0);
+  el.innerHTML = `
+<div class="card" style="padding:20px">
+  <h3 style="margin:0 0 4px;font-size:16px">📝 AI 正在生成章节细纲...</h3>
+  <p style="color:var(--text3);font-size:13px;margin:0 0 16px">为每章生成详细写作指引，共 ${total} 章</p>
+  <div id="detailOutlineResult" style="min-height:200px">
+    <div style="text-align:center;padding:60px 0;color:var(--text3)">
+      <div style="font-size:32px;margin-bottom:12px">⚙️</div>
+      <div>AI 思考中，请稍候...</div>
+    </div>
+  </div>
+  <div id="detailOutlineActions" style="display:none;margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">
+    <button class="btn btn-secondary" onclick="generateDetailOutline()">🔄 重新生成</button>
+    <button class="btn btn-primary" onclick="goStep4()">下一步：生成章节内容 →</button>
+  </div>
+</div>`;
+}
+
+async function generateDetailOutline() {
+  const body = document.getElementById('aiCreateBody');
+  if(!body) return;
+  renderStep3(body);
+
+  const chapterList = [];
+  (AICreate.outline?.volumes||[]).forEach((vol,vi)=>{
+    (vol.chapters||[]).forEach((ch,ci)=>{
+      chapterList.push(`第${vi+1}卷第${ci+1}章《${ch.title}》：${ch.summary}`);
+    });
+  });
+
+  const prompt = `你是一位专业小说编辑，请为以下小说的每个章节生成详细细纲。
+
+小说信息：
+- 名称：${AICreate.outline.title}
+- 类型：${AICreate.outline.genre}
+- 简介：${AICreate.outline.desc}
+
+章节列表：
+${chapterList.join('\n')}
+
+要求：
+- 为每章输出详细细纲，包含：场景设定、主要事件（3-5个关键情节点）、人物行动、章节结尾钩子
+- 输出严格JSON格式
+
+JSON格式：
+{
+  "chapters": [
+    {
+      "volIndex": 0,
+      "chIndex": 0,
+      "detail": "详细细纲（200字内）"
+    }
+  ]
+}`;
+
+  try {
+    const result = await callAI([{role:'user',content:prompt}], 4000, 0.7);
+    const jsonMatch = result.match(/\{[\s\S]*\}/);
+    if(!jsonMatch) throw new Error('返回格式错误，请重试');
+    const parsed = JSON.parse(jsonMatch[0]);
+    
+    // 将细纲合并到大纲
+    AICreate.detailOutline = JSON.parse(JSON.stringify(AICreate.outline));
+    (parsed.chapters||[]).forEach(item=>{
+      const vol = AICreate.detailOutline.volumes[item.volIndex];
+      if(vol && vol.chapters[item.chIndex]){
+        vol.chapters[item.chIndex].detail = item.detail;
+      }
+    });
+
+    const resultEl = document.getElementById('detailOutlineResult');
+    if(resultEl) resultEl.innerHTML = renderDetailOutlinePreview(AICreate.detailOutline);
+    const actionsEl = document.getElementById('detailOutlineActions');
+    if(actionsEl) actionsEl.style.display='flex';
+  } catch(e) {
+    const resultEl = document.getElementById('detailOutlineResult');
+    if(resultEl) resultEl.innerHTML = `
+      <div style="text-align:center;padding:40px 0;color:var(--danger)">
+        <div style="font-size:32px;margin-bottom:12px">❌</div>
+        <div>${e.message}</div>
+        <button class="btn btn-secondary" style="margin-top:12px" onclick="generateDetailOutline()">重试</button>
+      </div>`;
+  }
+}
+
+function renderDetailOutlinePreview(outline) {
+  return `<div style="background:var(--bg3);border-radius:8px;padding:16px;max-height:420px;overflow-y:auto">
+  ${(outline.volumes||[]).map((vol,vi)=>`
+    <div style="margin-bottom:16px">
+      <div style="font-weight:700;font-size:14px;margin-bottom:8px">📚 ${vol.title}</div>
+      ${(vol.chapters||[]).map((ch,ci)=>`
+        <div style="margin-bottom:8px;padding:10px;background:var(--bg2);border-radius:6px">
+          <div style="font-weight:600;font-size:13px;margin-bottom:4px">第${ci+1}章：${ch.title}</div>
+          <div style="font-size:12px;color:var(--text3);line-height:1.6">${ch.detail||ch.summary||'（待生成）'}</div>
+        </div>`).join('')}
+    </div>`).join('')}
+</div>`;
+}
+
+async function goStep4() {
+  if(!AICreate.detailOutline){ toast('请先生成细纲', 'warning'); return; }
+  
+  // 创建小说
+  const novel = {
+    id: genId(),
+    title: AICreate.detailOutline.title || '新小说',
+    type: 'long',
+    genre: AICreate.detailOutline.genre || '',
+    desc: AICreate.detailOutline.desc || '',
+    wordTarget: 200000,
+    icon: '🤖',
+    coverClass: 'cover-scifi',
+    created: Date.now(),
+    updated: Date.now(),
+    status: 'writing'
+  };
+  const novels = DB.getNovels();
+  novels.unshift(novel);
+  DB.setNovels(novels);
+  AICreate.novelId = novel.id;
+  AICreate.step = 4;
+  renderAICreateStep();
+}
+
+// 第4步：逐章生成内容
+function renderStep4(el) {
+  const outline = AICreate.detailOutline;
+  const allChapters = [];
+  (outline?.volumes||[]).forEach((vol,vi)=>{
+    (vol.chapters||[]).forEach((ch,ci)=>{
+      allChapters.push({volIndex:vi, chIndex:ci, volTitle:vol.title, title:ch.title, summary:ch.summary, detail:ch.detail||ch.summary});
+    });
+  });
+  
+  el.innerHTML = `
+<div class="card" style="padding:20px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+    <div>
+      <h3 style="margin:0;font-size:16px">✍️ 逐章生成内容</h3>
+      <p style="color:var(--text3);font-size:13px;margin:4px 0 0">点击按钮生成每章，或一键全部生成</p>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-secondary btn-sm" onclick="navigate('write',{novelId:'${AICreate.novelId}'})">📖 去写作页</button>
+      <button class="btn btn-primary btn-sm" id="genAllBtn" onclick="generateAllChapters()">⚡ 全部生成</button>
+    </div>
+  </div>
+  
+  <div id="chaptersGenList" style="display:grid;gap:6px;max-height:500px;overflow-y:auto">
+    ${allChapters.map((ch,idx)=>`
+    <div id="chGen_${idx}" style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg3);border-radius:8px;border:1px solid var(--border)">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${ch.volTitle} · 第${ch.chIndex+1}章：${ch.title}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${ch.summary||''}</div>
+      </div>
+      <div id="chStatus_${idx}" style="font-size:12px;color:var(--text3);white-space:nowrap">待生成</div>
+      <button id="chBtn_${idx}" class="btn btn-secondary btn-sm" style="white-space:nowrap;flex-shrink:0" onclick="generateOneChapter(${idx})">生成</button>
+    </div>`).join('')}
+  </div>
+  
+  <div id="genProgress" style="display:none;margin-top:12px;padding:12px;background:var(--bg3);border-radius:8px;font-size:13px;color:var(--text2)">
+    <div id="genProgressText">准备中...</div>
+    <div style="margin-top:8px;background:var(--bg2);border-radius:4px;height:6px;overflow:hidden">
+      <div id="genProgressBar" style="height:100%;background:var(--primary);width:0%;transition:width .3s;border-radius:4px"></div>
+    </div>
+  </div>
+</div>`;
+
+  // 存储章节列表到全局
+  AICreate.allChapters = allChapters;
+}
+
+async function generateOneChapter(idx) {
+  const ch = AICreate.allChapters[idx];
+  if(!ch) return;
+  
+  const btn = document.getElementById('chBtn_'+idx);
+  const statusEl = document.getElementById('chStatus_'+idx);
+  if(btn) { btn.disabled=true; btn.textContent='生成中...'; }
+  if(statusEl) { statusEl.textContent='⏳'; statusEl.style.color='var(--warning)'; }
+
+  try {
+    const settings = DB.getSettings();
+    const wordsPerChapter = settings.aiMaxTokens || 1000;
+    
+    const prompt = `请根据以下信息，创作小说《${AICreate.detailOutline.title}》的一个章节。
+
+章节信息：
+- 所在卷：${ch.volTitle}
+- 章节标题：${ch.title}
+- 章节概要：${ch.summary}
+- 详细细纲：${ch.detail}
+
+要求：
+- 字数约 ${wordsPerChapter} 字
+- 文笔流畅，情节生动，符合${AICreate.detailOutline.genre}风格
+- 用正文格式输出，不要有多余的说明文字
+- 结尾设置悬念或钩子，吸引读者继续阅读`;
+
+    const content = await callAI([{role:'user',content:prompt}], wordsPerChapter+200, 0.8);
+    
+    // 保存章节
+    const chapters = DB.getChapters(AICreate.novelId);
+    const existing = chapters.find(c=>c.title===ch.title);
+    if(existing){
+      existing.content = content;
+      existing.words = content.length;
+    } else {
+      chapters.push({
+        id: genId(),
+        novelId: AICreate.novelId,
+        title: ch.title,
+        content: content,
+        order: chapters.length + 1,
+        words: content.length
+      });
+    }
+    DB.setChapters(AICreate.novelId, chapters);
+    
+    if(btn) { btn.textContent='✅ 已生成'; btn.style.background='var(--success)'; btn.style.color='#fff'; }
+    if(statusEl) { statusEl.textContent='✅'; statusEl.style.color='var(--success)'; }
+    document.getElementById('chGen_'+idx).style.borderColor='var(--success)';
+  } catch(e) {
+    if(btn) { btn.disabled=false; btn.textContent='重试'; }
+    if(statusEl) { statusEl.textContent='❌'; statusEl.style.color='var(--danger)'; }
+    toast('生成失败：'+e.message, 'error');
+  }
+}
+
+async function generateAllChapters() {
+  const allBtn = document.getElementById('genAllBtn');
+  const progress = document.getElementById('genProgress');
+  const progressText = document.getElementById('genProgressText');
+  const progressBar = document.getElementById('genProgressBar');
+  
+  if(allBtn) { allBtn.disabled=true; allBtn.textContent='⏳ 生成中...'; }
+  if(progress) progress.style.display='block';
+  
+  const total = AICreate.allChapters.length;
+  for(let i=0; i<total; i++){
+    if(progressText) progressText.textContent = `正在生成第 ${i+1}/${total} 章：${AICreate.allChapters[i].title}`;
+    if(progressBar) progressBar.style.width = Math.round((i/total)*100)+'%';
+    await generateOneChapter(i);
+    // 每章之间稍作等待，避免API限流
+    if(i < total-1) await new Promise(r=>setTimeout(r,500));
+  }
+  
+  if(progressText) progressText.textContent = `✅ 全部 ${total} 章生成完成！`;
+  if(progressBar) progressBar.style.width='100%';
+  if(allBtn) { allBtn.textContent='✅ 完成'; }
+  
+  toast(`🎉 ${AICreate.detailOutline.title} 创作完成！共 ${total} 章`, 'success');
 }
