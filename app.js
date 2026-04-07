@@ -3031,21 +3031,21 @@ const AICreate = {
 function renderAICreate(el) {
   const s = DB.getSettings();
   const hasKey = !!s.aiApiKey;
+  const steps = [['1','💡','输入灵感'],['2','📋','生成大纲'],['3','📝','生成细纲'],['4','✍️','生成内容']];
   el.innerHTML = `
-<div style="max-width:780px;margin:0 auto;padding:16px">
-  ${!hasKey ? `<div style="background:var(--warning);color:#000;border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:14px">
-    ⚠️ 请先 <span style="cursor:pointer;text-decoration:underline" onclick="navigate('settings');setTimeout(()=>showSettingsSection('ai'),100)">配置 API Key</span>，才能使用 AI 功能
+<div class="aic-wrap">
+  ${!hasKey ? `<div class="aic-key-warning">
+    <span>⚠️</span>
+    <span>请先 <a onclick="navigate('settings');setTimeout(()=>showSettingsSection('ai'),100)">配置 API Key</a>，才能使用 AI 功能</span>
   </div>` : ''}
-  <!-- 步骤进度条 -->
-  <div id="aiCreateSteps" style="display:flex;gap:0;margin-bottom:24px;border-radius:10px;overflow:hidden;border:1px solid var(--border)">
-    ${[['1','💡','输入灵感'],['2','📋','生成大纲'],['3','📝','生成细纲'],['4','✍️','生成内容']].map(([n,icon,label])=>`
-    <div id="aiStep${n}" style="flex:1;padding:10px 4px;text-align:center;font-size:12px;background:${n==='1'?'var(--primary)':'var(--bg2)'};color:${n==='1'?'#fff':'var(--text2)'};transition:all .3s;cursor:default">
-      <div style="font-size:18px">${icon}</div>
-      <div style="margin-top:2px">第${n}步</div>
-      <div style="font-weight:600">${label}</div>
+  <div id="aiCreateSteps" class="aic-steps">
+    ${steps.map(([n,icon,label])=>`
+    <div id="aiStep${n}" class="aic-step${n==='1'?' active':''}">
+      <div class="aic-step-icon">${icon}</div>
+      <div class="aic-step-num">第${n}步</div>
+      <div class="aic-step-label">${label}</div>
     </div>`).join('')}
   </div>
-  <!-- 内容区 -->
   <div id="aiCreateBody"></div>
 </div>`;
   AICreate.step = 1;
@@ -3057,13 +3057,9 @@ function renderAICreateStep() {
   for(let i=1;i<=4;i++){
     const el=document.getElementById('aiStep'+i);
     if(!el) continue;
-    if(i===AICreate.step){
-      el.style.background='var(--primary)'; el.style.color='#fff';
-    } else if(i<AICreate.step){
-      el.style.background='var(--success)'; el.style.color='#fff';
-    } else {
-      el.style.background='var(--bg2)'; el.style.color='var(--text2)';
-    }
+    el.className = 'aic-step';
+    if(i===AICreate.step) el.classList.add('active');
+    else if(i<AICreate.step) el.classList.add('done');
   }
   const body = document.getElementById('aiCreateBody');
   if(!body) return;
@@ -3078,37 +3074,44 @@ function renderAICreateStep() {
 // 第1步：输入灵感
 function renderStep1(el) {
   el.innerHTML = `
-<div class="card" style="padding:20px">
-  <h3 style="margin:0 0 16px;font-size:16px">💡 输入你的小说灵感</h3>
-  <textarea id="aiIdeaInput" style="width:100%;height:120px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px;color:var(--text1);font-size:14px;resize:vertical;box-sizing:border-box;font-family:inherit;line-height:1.7" placeholder="例如：一个普通外卖小哥意外获得了时间暂停的能力，从此走上了一条不凡的道路。故事发生在近未来都市，主角性格乐观幽默，会遇到各种奇特任务...">${AICreate.idea}</textarea>
+<div class="aic-card fade-in">
+  <div class="aic-card-header">
+    <div class="aic-card-title">
+      <span class="aic-card-title-icon">💡</span>
+      输入你的小说灵感
+    </div>
+    <div class="aic-card-subtitle">描述你的故事创意，越详细 AI 创作的效果越好</div>
+  </div>
+  <textarea id="aiIdeaInput" class="aic-idea-textarea"
+    placeholder="例如：一个普通外卖小哥意外获得了时间暂停的能力，从此走上了一条不凡的道路。故事发生在近未来都市，主角性格乐观幽默，会遇到各种奇特任务...">${AICreate.idea}</textarea>
   
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px">
-    <div>
-      <div style="font-size:13px;color:var(--text2);margin-bottom:6px">卷数（篇）</div>
-      <select id="aiVolCount" style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:var(--text1);font-size:14px">
-        <option value="1" ${AICreate.volCount===1?'selected':''}>1卷（适合短篇）</option>
-        <option value="2" ${AICreate.volCount===2?'selected':''}>2卷</option>
-        <option value="3" ${AICreate.volCount===3?'selected':''}>3卷（适合中篇）</option>
-        <option value="5" ${AICreate.volCount===5?'selected':''}>5卷（适合长篇）</option>
-        <option value="10" ${AICreate.volCount===10?'selected':''}>10卷（超长篇）</option>
+  <div class="aic-config-row">
+    <div class="aic-config-item">
+      <div class="aic-config-label">📚 卷数（篇）</div>
+      <select id="aiVolCount" class="aic-select">
+        <option value="1" ${AICreate.volCount===1?'selected':''}>1 卷（适合短篇）</option>
+        <option value="2" ${AICreate.volCount===2?'selected':''}>2 卷</option>
+        <option value="3" ${AICreate.volCount===3?'selected':''}>3 卷（适合中篇）</option>
+        <option value="5" ${AICreate.volCount===5?'selected':''}>5 卷（适合长篇）</option>
+        <option value="10" ${AICreate.volCount===10?'selected':''}>10 卷（超长篇）</option>
       </select>
     </div>
-    <div>
-      <div style="font-size:13px;color:var(--text2);margin-bottom:6px">每卷章节数</div>
-      <select id="aiChapterPerVol" style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:var(--text1);font-size:14px">
-        <option value="5" ${AICreate.chapterPerVol===5?'selected':''}>5章</option>
-        <option value="10" ${AICreate.chapterPerVol===10?'selected':''}>10章</option>
-        <option value="15" ${AICreate.chapterPerVol===15?'selected':''}>15章</option>
-        <option value="20" ${AICreate.chapterPerVol===20?'selected':''}>20章</option>
+    <div class="aic-config-item">
+      <div class="aic-config-label">📑 每卷章节数</div>
+      <select id="aiChapterPerVol" class="aic-select">
+        <option value="5" ${AICreate.chapterPerVol===5?'selected':''}>5 章</option>
+        <option value="10" ${AICreate.chapterPerVol===10?'selected':''}>10 章</option>
+        <option value="15" ${AICreate.chapterPerVol===15?'selected':''}>15 章</option>
+        <option value="20" ${AICreate.chapterPerVol===20?'selected':''}>20 章</option>
       </select>
     </div>
   </div>
   
-  <div style="margin-top:6px;font-size:12px;color:var(--text3)" id="aiTotalChaptersHint">
+  <div class="aic-total-hint">
     共 <b id="aiTotalNum">${AICreate.volCount * AICreate.chapterPerVol}</b> 章
   </div>
 
-  <button class="btn btn-primary btn-block" style="margin-top:20px;height:44px;font-size:15px" onclick="goStep2()">
+  <button class="aic-next-btn" onclick="goStep2()">
     下一步：AI 生成大纲 →
   </button>
 </div>`;
@@ -3138,18 +3141,23 @@ async function goStep2() {
 // 第2步：大纲生成
 function renderStep2(el) {
   el.innerHTML = `
-<div class="card" style="padding:20px">
-  <h3 style="margin:0 0 4px;font-size:16px">📋 AI 正在生成大纲...</h3>
-  <p style="color:var(--text3);font-size:13px;margin:0 0 16px">共 ${AICreate.volCount} 卷，每卷 ${AICreate.chapterPerVol} 章</p>
-  <div id="outlineResult" style="min-height:200px">
-    <div style="text-align:center;padding:60px 0;color:var(--text3)">
-      <div style="font-size:32px;margin-bottom:12px">⚙️</div>
-      <div>AI 思考中，请稍候...</div>
+<div class="aic-card fade-in">
+  <div class="aic-card-header">
+    <div class="aic-card-title">
+      <span class="aic-card-title-icon">📋</span>
+      AI 生成大纲
+    </div>
+    <div class="aic-card-subtitle">${AICreate.volCount} 卷 · 每卷 ${AICreate.chapterPerVol} 章 · 共 ${AICreate.volCount * AICreate.chapterPerVol} 章</div>
+  </div>
+  <div id="outlineResult">
+    <div class="aic-loading">
+      <div class="aic-loading-spinner"></div>
+      <div class="aic-loading-text">AI 正在构思大纲<span class="aic-loading-dots"></span></div>
     </div>
   </div>
-  <div id="outlineActions" style="display:none;margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">
-    <button class="btn btn-secondary" onclick="generateOutline()">🔄 重新生成</button>
-    <button class="btn btn-primary" onclick="goStep3()">下一步：生成细纲 →</button>
+  <div id="outlineActions" style="display:none" class="aic-actions">
+    <button class="aic-btn-regen" onclick="generateOutline()">🔄 重新生成</button>
+    <button class="aic-next-btn" style="flex:1;margin-top:0" onclick="goStep3()">下一步：生成细纲 →</button>
   </div>
 </div>`;
 }
@@ -3201,33 +3209,39 @@ JSON格式如下：
   } catch(e) {
     const resultEl = document.getElementById('outlineResult');
     if(resultEl) resultEl.innerHTML = `
-      <div style="text-align:center;padding:40px 0;color:var(--danger)">
-        <div style="font-size:32px;margin-bottom:12px">❌</div>
-        <div>${e.message}</div>
-        <button class="btn btn-secondary" style="margin-top:12px" onclick="generateOutline()">重试</button>
+      <div class="aic-error">
+        <div class="aic-error-icon">❌</div>
+        <div class="aic-error-msg">${e.message}</div>
+        <button class="btn btn-secondary" style="margin-top:4px" onclick="generateOutline()">重试</button>
       </div>`;
   }
 }
 
 function renderOutlinePreview(outline) {
   return `
-<div style="background:var(--bg3);border-radius:8px;padding:16px">
-  <div style="font-size:18px;font-weight:700;margin-bottom:4px">${outline.title||'未命名'}</div>
-  <div style="font-size:12px;color:var(--primary);margin-bottom:6px">${outline.genre||''}</div>
-  <div style="font-size:13px;color:var(--text2);margin-bottom:16px">${outline.desc||''}</div>
-  ${(outline.volumes||[]).map((vol,vi)=>`
-    <div style="margin-bottom:12px">
-      <div style="font-weight:600;font-size:14px;color:var(--text1);margin-bottom:6px">📚 ${vol.title}</div>
-      <div style="font-size:12px;color:var(--text3);margin-bottom:8px">${vol.summary||''}</div>
-      <div style="display:grid;gap:4px">
+<div class="aic-outline-box fade-in">
+  <div class="aic-outline-header">
+    <div class="aic-outline-title">${outline.title||'未命名'}</div>
+    <div>
+      <span class="aic-outline-genre">${outline.genre||'未分类'}</span>
+    </div>
+    <div class="aic-outline-desc">${outline.desc||''}</div>
+  </div>
+  <div class="aic-outline-body">
+    ${(outline.volumes||[]).map((vol,vi)=>`
+    <div class="aic-vol-block">
+      <div class="aic-vol-title">📚 ${vol.title}</div>
+      <div class="aic-vol-summary">${vol.summary||''}</div>
+      <div class="aic-ch-list">
         ${(vol.chapters||[]).map((ch,ci)=>`
-          <div style="display:flex;gap:8px;font-size:13px;padding:6px 10px;background:var(--bg2);border-radius:6px">
-            <span style="color:var(--text3);min-width:32px">第${ci+1}章</span>
-            <span style="color:var(--text1);font-weight:500">${ch.title}</span>
-            <span style="color:var(--text3);flex:1;text-align:right">${ch.summary||''}</span>
-          </div>`).join('')}
+        <div class="aic-ch-item">
+          <span class="aic-ch-num">第${ci+1}章</span>
+          <span class="aic-ch-title">${ch.title}</span>
+          <span class="aic-ch-summary">${ch.summary||''}</span>
+        </div>`).join('')}
       </div>
     </div>`).join('')}
+  </div>
 </div>`;
 }
 
@@ -3242,18 +3256,23 @@ async function goStep3() {
 function renderStep3(el) {
   const total = (AICreate.outline?.volumes||[]).reduce((s,v)=>s+(v.chapters?.length||0), 0);
   el.innerHTML = `
-<div class="card" style="padding:20px">
-  <h3 style="margin:0 0 4px;font-size:16px">📝 AI 正在生成章节细纲...</h3>
-  <p style="color:var(--text3);font-size:13px;margin:0 0 16px">为每章生成详细写作指引，共 ${total} 章</p>
-  <div id="detailOutlineResult" style="min-height:200px">
-    <div style="text-align:center;padding:60px 0;color:var(--text3)">
-      <div style="font-size:32px;margin-bottom:12px">⚙️</div>
-      <div>AI 思考中，请稍候...</div>
+<div class="aic-card fade-in">
+  <div class="aic-card-header">
+    <div class="aic-card-title">
+      <span class="aic-card-title-icon">📝</span>
+      AI 生成章节细纲
+    </div>
+    <div class="aic-card-subtitle">为每章生成详细写作指引，防止情节跑偏，共 ${total} 章</div>
+  </div>
+  <div id="detailOutlineResult">
+    <div class="aic-loading">
+      <div class="aic-loading-spinner"></div>
+      <div class="aic-loading-text">AI 正在规划每章细节<span class="aic-loading-dots"></span></div>
     </div>
   </div>
-  <div id="detailOutlineActions" style="display:none;margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">
-    <button class="btn btn-secondary" onclick="generateDetailOutline()">🔄 重新生成</button>
-    <button class="btn btn-primary" onclick="goStep4()">下一步：生成章节内容 →</button>
+  <div id="detailOutlineActions" style="display:none" class="aic-actions">
+    <button class="aic-btn-regen" onclick="generateDetailOutline()">🔄 重新生成</button>
+    <button class="aic-next-btn" style="flex:1;margin-top:0" onclick="goStep4()">下一步：生成章节内容 →</button>
   </div>
 </div>`;
 }
@@ -3317,25 +3336,24 @@ JSON格式：
   } catch(e) {
     const resultEl = document.getElementById('detailOutlineResult');
     if(resultEl) resultEl.innerHTML = `
-      <div style="text-align:center;padding:40px 0;color:var(--danger)">
-        <div style="font-size:32px;margin-bottom:12px">❌</div>
-        <div>${e.message}</div>
-        <button class="btn btn-secondary" style="margin-top:12px" onclick="generateDetailOutline()">重试</button>
+      <div class="aic-error">
+        <div class="aic-error-icon">❌</div>
+        <div class="aic-error-msg">${e.message}</div>
+        <button class="btn btn-secondary" style="margin-top:4px" onclick="generateDetailOutline()">重试</button>
       </div>`;
   }
 }
 
 function renderDetailOutlinePreview(outline) {
-  return `<div style="background:var(--bg3);border-radius:8px;padding:16px;max-height:420px;overflow-y:auto">
+  return `<div class="aic-detail-box fade-in">
   ${(outline.volumes||[]).map((vol,vi)=>`
-    <div style="margin-bottom:16px">
-      <div style="font-weight:700;font-size:14px;margin-bottom:8px">📚 ${vol.title}</div>
-      ${(vol.chapters||[]).map((ch,ci)=>`
-        <div style="margin-bottom:8px;padding:10px;background:var(--bg2);border-radius:6px">
-          <div style="font-weight:600;font-size:13px;margin-bottom:4px">第${ci+1}章：${ch.title}</div>
-          <div style="font-size:12px;color:var(--text3);line-height:1.6">${ch.detail||ch.summary||'（待生成）'}</div>
-        </div>`).join('')}
-    </div>`).join('')}
+    <div class="aic-detail-vol">📚 ${vol.title}</div>
+    ${(vol.chapters||[]).map((ch,ci)=>`
+      <div class="aic-detail-ch">
+        <div class="aic-detail-ch-title">第${ci+1}章：${ch.title}</div>
+        <div class="aic-detail-ch-text">${ch.detail||ch.summary||'（待生成）'}</div>
+      </div>`).join('')}
+  `).join('')}
 </div>`;
 }
 
@@ -3375,34 +3393,34 @@ function renderStep4(el) {
   });
   
   el.innerHTML = `
-<div class="card" style="padding:20px">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+<div class="aic-card fade-in">
+  <div class="aic-gen-header">
     <div>
-      <h3 style="margin:0;font-size:16px">✍️ 逐章生成内容</h3>
-      <p style="color:var(--text3);font-size:13px;margin:4px 0 0">点击按钮生成每章，或一键全部生成</p>
+      <div class="aic-gen-title"><span>✍️</span> 逐章生成内容</div>
+      <div class="aic-gen-subtitle">可单章生成，或点击「全部生成」一键完成</div>
     </div>
-    <div style="display:flex;gap:8px">
+    <div class="aic-gen-btns">
       <button class="btn btn-secondary btn-sm" onclick="navigate('write',{novelId:'${AICreate.novelId}'})">📖 去写作页</button>
       <button class="btn btn-primary btn-sm" id="genAllBtn" onclick="generateAllChapters()">⚡ 全部生成</button>
     </div>
   </div>
   
-  <div id="chaptersGenList" style="display:grid;gap:6px;max-height:500px;overflow-y:auto">
+  <div id="chaptersGenList" class="aic-ch-gen-list">
     ${allChapters.map((ch,idx)=>`
-    <div id="chGen_${idx}" style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg3);border-radius:8px;border:1px solid var(--border)">
-      <div style="flex:1;min-width:0">
-        <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${ch.volTitle} · 第${ch.chIndex+1}章：${ch.title}</div>
-        <div style="font-size:11px;color:var(--text3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${ch.summary||''}</div>
+    <div id="chGen_${idx}" class="aic-ch-gen-item">
+      <div class="aic-ch-gen-info">
+        <div class="aic-ch-gen-name">${ch.volTitle} · 第${ch.chIndex+1}章：${ch.title}</div>
+        <div class="aic-ch-gen-summary">${ch.summary||''}</div>
       </div>
-      <div id="chStatus_${idx}" style="font-size:12px;color:var(--text3);white-space:nowrap">待生成</div>
-      <button id="chBtn_${idx}" class="btn btn-secondary btn-sm" style="white-space:nowrap;flex-shrink:0" onclick="generateOneChapter(${idx})">生成</button>
+      <div id="chStatus_${idx}" class="aic-ch-gen-status">⬜</div>
+      <button id="chBtn_${idx}" class="aic-ch-gen-btn" onclick="generateOneChapter(${idx})">生成</button>
     </div>`).join('')}
   </div>
   
-  <div id="genProgress" style="display:none;margin-top:12px;padding:12px;background:var(--bg3);border-radius:8px;font-size:13px;color:var(--text2)">
-    <div id="genProgressText">准备中...</div>
-    <div style="margin-top:8px;background:var(--bg2);border-radius:4px;height:6px;overflow:hidden">
-      <div id="genProgressBar" style="height:100%;background:var(--primary);width:0%;transition:width .3s;border-radius:4px"></div>
+  <div id="genProgress" class="aic-progress-box">
+    <div id="genProgressText" class="aic-progress-text">准备中...</div>
+    <div class="aic-progress-track">
+      <div id="genProgressBar" class="aic-progress-fill"></div>
     </div>
   </div>
 </div>`;
@@ -3417,8 +3435,10 @@ async function generateOneChapter(idx) {
   
   const btn = document.getElementById('chBtn_'+idx);
   const statusEl = document.getElementById('chStatus_'+idx);
+  const itemEl = document.getElementById('chGen_'+idx);
   if(btn) { btn.disabled=true; btn.textContent='生成中...'; }
-  if(statusEl) { statusEl.textContent='⏳'; statusEl.style.color='var(--warning)'; }
+  if(statusEl) { statusEl.textContent='⏳'; }
+  if(itemEl) { itemEl.className='aic-ch-gen-item running'; }
 
   try {
     const settings = DB.getSettings();
@@ -3458,12 +3478,13 @@ async function generateOneChapter(idx) {
     }
     DB.setChapters(AICreate.novelId, chapters);
     
-    if(btn) { btn.textContent='✅ 已生成'; btn.style.background='var(--success)'; btn.style.color='#fff'; }
-    if(statusEl) { statusEl.textContent='✅'; statusEl.style.color='var(--success)'; }
-    document.getElementById('chGen_'+idx).style.borderColor='var(--success)';
+    if(btn) { btn.textContent='✅ 已生成'; btn.className='aic-ch-gen-btn done-btn'; }
+    if(statusEl) { statusEl.textContent='✅'; }
+    if(itemEl) itemEl.className='aic-ch-gen-item done';
   } catch(e) {
-    if(btn) { btn.disabled=false; btn.textContent='重试'; }
-    if(statusEl) { statusEl.textContent='❌'; statusEl.style.color='var(--danger)'; }
+    if(btn) { btn.disabled=false; btn.textContent='重试'; btn.className='aic-ch-gen-btn'; }
+    if(statusEl) { statusEl.textContent='❌'; }
+    if(itemEl) itemEl.className='aic-ch-gen-item failed';
     toast('生成失败：'+e.message, 'error');
   }
 }
